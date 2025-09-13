@@ -60,7 +60,7 @@ def mouse_callback(event, x, y, flags, param):
 
 # --- Draw dashboard ---
 def draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options, bet_amount_options):
-    global toggle_button_coords, dashboard_visible
+    global toggle_button_coords, dashboard_visible, option_coords, amount_coords
     h, w, _ = frame.shape
     sidebar_w = 600
     overlay = frame.copy()
@@ -120,10 +120,7 @@ def draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options,
     y_cursor += box_height + section_spacing
 
     # --- Options ---
-    cv2.putText(frame, "Options:", (w - sidebar_w + 20, y_cursor),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 200), 2)
-    y_cursor += 30
-    option_coords = []
+    option_coords.clear()
     for i, (k, v) in enumerate(betting_options.items(), start=1):
         color = (80, 80, 80)
         if selected_bet and f"{k} {v}" == selected_bet:
@@ -137,10 +134,7 @@ def draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options,
     y_cursor += section_spacing // 2  # extra space before amount options
 
     # --- Amount Options ---
-    cv2.putText(frame, "Select Amount:", (w - sidebar_w + 20, y_cursor),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 200), 2)
-    y_cursor += 30
-    amount_coords = []
+    amount_coords.clear()
     for i, amt in enumerate(bet_amount_options):
         color = (80, 80, 80)
         if selected_amount == amt:
@@ -275,15 +269,23 @@ def main():
     cv2.namedWindow("Football Analysis", cv2.WINDOW_NORMAL)
     cv2.setMouseCallback("Football Analysis", mouse_callback, param=(betting_options, bet_amount_options))
     frame_idx = 0
+    paused = False  # New flag for pause
     while frame_idx < len(output_video_frames):
         frame = output_video_frames[frame_idx]
         frame_with_dashboard = draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options, bet_amount_options)
         cv2.imshow("Football Analysis", frame_with_dashboard)
+
         key = cv2.waitKey(30) & 0xFF
-        if key == ord('q'):
+        if key == ord('q'):  # Quit
             break
-        frame_idx += 1
+        elif key == ord(' '):  # Spacebar toggles pause
+            paused = not paused
+
+        if not paused:
+            frame_idx += 1
+
     cv2.destroyAllWindows()
+
 
     # Save video with dashboard overlay
     output_video_frames = [
