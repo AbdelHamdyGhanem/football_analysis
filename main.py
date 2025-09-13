@@ -1,5 +1,6 @@
 from utils import read_video, save_video
 from trackers import Tracker
+import random
 import cv2
 import webcolors
 import numpy as np
@@ -21,6 +22,11 @@ confirm_coords = ()
 new_bet_coords = ()
 dashboard_visible = True
 toggle_button_coords = ()  # x1, y1, x2, y2
+
+player_names_list = [
+    "Alex", "Jordan", "Taylor", "Morgan", "Casey",
+    "Riley", "Jamie", "Cameron", "Drew", "Quinn"
+]
 
 # --- Mouse callback ---
 def mouse_callback(event, x, y, flags, param):
@@ -241,6 +247,24 @@ def main():
         else:
             team_ball_control.append(team_ball_control[-1] if len(team_ball_control) > 0 else "Unknown")
     team_ball_control = np.array(team_ball_control)
+
+    # --- Assign random player names (fixed per player_id) ---
+    player_names_list = [
+        "Alex", "Jordan", "Taylor", "Morgan", "Casey",
+        "Riley", "Jamie", "Cameron", "Drew", "Quinn"
+    ]
+
+    player_id_to_name = {}
+    for frame_num, player_track in enumerate(tracks['players']):
+        for player_id in player_track.keys():
+            if player_id not in player_id_to_name:
+                player_id_to_name[player_id] = random.choice(player_names_list)
+
+    # --- Assign random rating per frame for each player ---
+    for frame_num, player_track in enumerate(tracks['players']):
+        for player_id, player_info in player_track.items():
+            player_info['name'] = player_id_to_name[player_id]
+            player_info['rating'] = round(random.uniform(5.0, 10.0), 1)  # rating between 5.0 and 10.0
 
     # Draw output
     output_video_frames = tracker.draw_annotations(video_frames, tracks, team_ball_control)
