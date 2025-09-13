@@ -14,6 +14,9 @@ class TeamAssigner:
         kmeans.fit(image_2d)
 
         return kmeans
+    
+    def get_team_colors(self):
+        return self.team_colors
 
     def get_player_color(self,frame,bbox):
         image = frame[int(bbox[1]):int(bbox[3]),int(bbox[0]):int(bbox[2])]
