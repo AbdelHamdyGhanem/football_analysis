@@ -7,9 +7,14 @@ import pandas as pd
 import cv2
 import random
 import sys
-from team_assigner import TeamAssigner
+import sys
+import os
 
 sys.path.append('../')
+from utils import get_center_of_bbox, get_bbox_width, get_foot_position
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from team_assigner import TeamAssigner
 from utils import get_center_of_bbox, get_bbox_width, get_foot_position
 
 class Tracker:
@@ -152,7 +157,10 @@ class Tracker:
 
     def draw_team_ball_control(self, frame, frame_num, team_ball_control, player_detections):
         overlay = frame.copy()
-        cv2.rectangle(overlay, (1350, 850), (1900, 970), (255, 255, 255), -1)
+        # Keep left_x the same, extend right_x by 80 more pixels
+        left_x = 1250
+        right_x = 5000  # new width
+        cv2.rectangle(overlay, (left_x, 850), (right_x, 970), (255, 255, 255), -1)
         alpha = 0.4
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
@@ -163,15 +171,13 @@ class Tracker:
         team_2 = team_2_num_frames / (team_1_num_frames + team_2_num_frames)
 
         team_assigner = TeamAssigner()
-        team_assigner.assign_team_color(frame, player_detections)  # ✅ fixed
-        team_colors = team_assigner.get_team_colors()
-        team1_color = [int(c) for c in team_colors[1]]
-        team2_color = [int(c) for c in team_colors[2]]
+        team_assigner.assign_team_color(frame, player_detections)
 
+        # Text remains in the same position
         cv2.putText(
             frame,
             f"{self.team1_label} Ball Control: {team_1*100:.2f}%",
-            (1400, 900),
+            (1280, 900),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
             (0, 0, 0),
@@ -181,17 +187,15 @@ class Tracker:
         cv2.putText(
             frame,
             f"{self.team2_label} Ball Control: {team_2*100:.2f}%",
-            (1400, 950),
+            (1280, 950),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
             (0, 0, 0),
             3
         )
 
-
-
-
         return frame
+
 
     def draw_annotations(self, video_frames, tracks, team_ball_control):
         output_video_frames = []
