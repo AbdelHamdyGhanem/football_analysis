@@ -30,4 +30,4 @@ To run this project, you need to have the following requirements installed:
 - Pandas
 
 - Refrence: https://github.com/abdullahtarek/football_analysis
-- 
+- NOTE: you can pause the game using space
