@@ -7,13 +7,18 @@ import pandas as pd
 import cv2
 import random
 import sys
+from team_assigner import TeamAssigner
+
 sys.path.append('../')
 from utils import get_center_of_bbox, get_bbox_width, get_foot_position
 
 class Tracker:
-    def __init__(self, model_path):
+    def __init__(self, model_path, get_color_name_func=None, team1_label=None, team2_label=None):
         self.model = YOLO(model_path) 
         self.tracker = sv.ByteTrack()
+        self.get_color_name_func = get_color_name_func
+        self.team1_label = team1_label
+        self.team2_label = team2_label
 
     def add_position_to_tracks(self, tracks):
         for object, object_tracks in tracks.items():
@@ -145,7 +150,7 @@ class Tracker:
         cv2.drawContours(frame, [triangle_points], 0, (0,0,0), 2)
         return frame
 
-    def draw_team_ball_control(self, frame, frame_num, team_ball_control):
+    def draw_team_ball_control(self, frame, frame_num, team_ball_control, player_detections):
         overlay = frame.copy()
         cv2.rectangle(overlay, (1350, 850), (1900, 970), (255, 255, 255), -1)
         alpha = 0.4
@@ -157,10 +162,35 @@ class Tracker:
         team_1 = team_1_num_frames / (team_1_num_frames + team_2_num_frames)
         team_2 = team_2_num_frames / (team_1_num_frames + team_2_num_frames)
 
-        cv2.putText(frame, f"Team 1 Ball Control: {team_1*100:.2f}%", (1400, 900),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 3)
-        cv2.putText(frame, f"Team 2 Ball Control: {team_2*100:.2f}%", (1400, 950),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 3)
+        team_assigner = TeamAssigner()
+        team_assigner.assign_team_color(frame, player_detections)  # ✅ fixed
+        team_colors = team_assigner.get_team_colors()
+        team1_color = [int(c) for c in team_colors[1]]
+        team2_color = [int(c) for c in team_colors[2]]
+
+        cv2.putText(
+            frame,
+            f"{self.team1_label} Ball Control: {team_1*100:.2f}%",
+            (1400, 900),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 0, 0),
+            3
+        )
+
+        cv2.putText(
+            frame,
+            f"{self.team2_label} Ball Control: {team_2*100:.2f}%",
+            (1400, 950),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 0, 0),
+            3
+        )
+
+
+
+
         return frame
 
     def draw_annotations(self, video_frames, tracks, team_ball_control):
@@ -209,7 +239,7 @@ class Tracker:
             for track_id, ball in ball_dict.items():
                 frame = self.draw_traingle(frame, ball["bbox"], (0,255,0))
 
-            frame = self.draw_team_ball_control(frame, frame_num, team_ball_control)
+            frame = self.draw_team_ball_control(frame, frame_num, team_ball_control, player_dict)
             output_video_frames.append(frame)
 
         return output_video_frames

@@ -9,6 +9,8 @@ from player_ball_assigner import PlayerBallAssigner
 from camera_movement_estimator import CameraMovementEstimator
 from view_transformer import ViewTransformer
 from speed_and_distance_estimator import SpeedAndDistance_Estimator
+from trackers import Tracker
+
 
 # Global variables for tracking selections
 selected_bet = None
@@ -161,7 +163,8 @@ def draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options,
     return frame
 
 # --- Helper function to get closest color name ---
-CSS3_NAMES_TO_HEX = {
+global CSS3_NAMES_TO_HEX
+CSS3_NAMES_TO_HEX= {
     'Black': '#000000', 'White': '#FFFFFF', 'Red': '#FF0000', 'Green': '#00FF00', 'Blue': '#0000FF',
     'Yellow': '#FFFF00', 'Cyan': '#00FFFF', 'Magenta': '#FF00FF', 'Gray': '#808080', 'Orange': '#FFA500',
     'Pink': '#FFC0CB', 'Brown': '#A52A2A', 'Purple': '#800080', 'Lime': '#00FF00', 'Navy': '#000080'
@@ -170,66 +173,77 @@ CSS3_NAMES_TO_HEX = {
 def get_closest_color_name(rgb_tuple):
     min_dist = float("inf")
     closest_name = None
-    for name, hex_val in CSS3_NAMES_TO_HEX.items():
-        r_c, g_c, b_c = webcolors.hex_to_rgb(hex_val)
+
+    for name in webcolors.names("css3"):  # list of CSS3 names
+        r_c, g_c, b_c = webcolors.name_to_rgb(name, spec='css3')
         dist = (r_c - rgb_tuple[0])**2 + (g_c - rgb_tuple[1])**2 + (b_c - rgb_tuple[2])**2
         if dist < min_dist:
             min_dist = dist
             closest_name = name
+
     return closest_name
 
 def main():
     global selected_bet, selected_amount, bet_confirmed
-    video_frames = read_video('input_videos/game.mp4')
-    tracker = Tracker('yolov8n.pt')
-    tracks = tracker.get_object_tracks(video_frames, read_from_stub=True, stub_path='stubs/track_stubs.pkl')
-    tracker.add_position_to_tracks(tracks)
 
-    # --- Assign team colors ---
-    frame = video_frames[0]
+    # --- Read video ---
+    video_frames = read_video('input_videos/game.mp4')
+
+    # --- Assign team colors using first frame ---
+    first_frame = video_frames[0]
+    player_detections = {}  # placeholder for first frame's player detections
+    tracks_stub_path = 'stubs/track_stubs.pkl'
+
+    # Create a temporary tracker to get tracks
+    temp_tracker = Tracker("yolov8n.pt")
+    tracks = temp_tracker.get_object_tracks(video_frames, read_from_stub=True, stub_path=tracks_stub_path)
+    temp_tracker.add_position_to_tracks(tracks)
     player_detections = tracks['players'][0]
+
+    # Assign colors
     team_assigner = TeamAssigner()
-    team_assigner.assign_team_color(frame, player_detections)
+    team_assigner.assign_team_color(first_frame, player_detections)
     team_colors = team_assigner.get_team_colors()
     team1_color = [int(c) for c in team_colors[1]]
     team2_color = [int(c) for c in team_colors[2]]
-    # Convert to friendly names
+
+    # Freeze color names for dashboard
     team1_label = f"Team {get_closest_color_name(tuple(team1_color))}"
     team2_label = f"Team {get_closest_color_name(tuple(team2_color))}"
 
-    # Update betting options
-    betting_options = {
-        "Player 7": "to assist",
-        "Player 10": "to assist",
-        "Player 11": "to cover most distance",
-        team1_label: "to win possession",
-        team2_label: "to make most passes"
-    }
-    bet_amount_options = ["$10", "$20", "$50", "$100"]
+    # --- Initialize tracker with labels ---
+    tracker = Tracker("yolov8n.pt", team1_label=team1_label, team2_label=team2_label)
 
-    # Camera movement estimator
+    # --- Camera movement estimator ---
     camera_movement_estimator = CameraMovementEstimator(video_frames[0])
     camera_movement_per_frame = camera_movement_estimator.get_camera_movement(
-        video_frames, read_from_stub=True, stub_path='stubs/camera_movement_stub.pkl')
+        video_frames, read_from_stub=True, stub_path='stubs/camera_movement_stub.pkl'
+    )
+
+    # --- Apply adjusted positions to tracks (this creates 'position_adjusted') ---
     camera_movement_estimator.add_adjust_positions_to_tracks(tracks, camera_movement_per_frame)
 
-    # View transformer
+    # --- View transformer ---
+    view_transformer = ViewTransformer()
+    view_transformer.add_transformed_position_to_tracks(tracks)
+
+    # --- View transformer and ball interpolation ---
     view_transformer = ViewTransformer()
     view_transformer.add_transformed_position_to_tracks(tracks)
     tracks["ball"] = tracker.interpolate_ball_positions(tracks["ball"])
 
-    # Speed & distance
+    # --- Speed & distance ---
     speed_and_distance_estimator = SpeedAndDistance_Estimator()
     speed_and_distance_estimator.add_speed_and_distance_to_tracks(tracks)
 
-    # Assign player teams
+    # --- Assign player teams ---
     for frame_num, player_track in enumerate(tracks['players']):
         for player_id, track in player_track.items():
             team = team_assigner.get_player_team(video_frames[frame_num], track['bbox'], player_id)
             tracks['players'][frame_num][player_id]['team'] = team
             tracks['players'][frame_num][player_id]['team_color'] = team_assigner.team_colors[team]
 
-    # Ball possession
+    # --- Ball possession ---
     player_assigner = PlayerBallAssigner()
     team_ball_control = []
     for frame_num, player_track in enumerate(tracks['players']):
@@ -242,25 +256,34 @@ def main():
             team_ball_control.append(team_ball_control[-1] if len(team_ball_control) > 0 else "Unknown")
     team_ball_control = np.array(team_ball_control)
 
-    # --- Assign random player names (fixed per player_id) ---
+    # --- Assign random player names ---
     player_names_list = [
         "Alex", "Jordan", "Taylor", "Morgan", "Casey",
         "Riley", "Jamie", "Cameron", "Drew", "Quinn"
     ]
-
     player_id_to_name = {}
     for frame_num, player_track in enumerate(tracks['players']):
         for player_id in player_track.keys():
             if player_id not in player_id_to_name:
                 player_id_to_name[player_id] = random.choice(player_names_list)
 
-    # --- Assign random rating per frame for each player ---
+    # --- Assign random ratings ---
     for frame_num, player_track in enumerate(tracks['players']):
         for player_id, player_info in player_track.items():
             player_info['name'] = player_id_to_name[player_id]
-            player_info['rating'] = round(random.uniform(5.0, 10.0), 1)  # rating between 5.0 and 10.0
+            player_info['rating'] = round(random.uniform(5.0, 10.0), 1)
 
-    # Draw output
+    # --- Update betting options ---
+    betting_options = {
+        "Player 7": "to assist",
+        "Player 10": "to assist",
+        "Player 11": "to cover most distance",
+        team1_label: "to win possession",
+        team2_label: "to make most passes"
+    }
+    bet_amount_options = ["$10", "$20", "$50", "$100"]
+
+    # --- Draw output ---
     output_video_frames = tracker.draw_annotations(video_frames, tracks, team_ball_control)
     output_video_frames = camera_movement_estimator.draw_camera_movement(output_video_frames, camera_movement_per_frame)
     speed_and_distance_estimator.draw_speed_and_distance(output_video_frames, tracks)
@@ -269,16 +292,16 @@ def main():
     cv2.namedWindow("Football Analysis", cv2.WINDOW_NORMAL)
     cv2.setMouseCallback("Football Analysis", mouse_callback, param=(betting_options, bet_amount_options))
     frame_idx = 0
-    paused = False  # New flag for pause
+    paused = False
     while frame_idx < len(output_video_frames):
         frame = output_video_frames[frame_idx]
         frame_with_dashboard = draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options, bet_amount_options)
         cv2.imshow("Football Analysis", frame_with_dashboard)
 
         key = cv2.waitKey(30) & 0xFF
-        if key == ord('q'):  # Quit
+        if key == ord('q'):
             break
-        elif key == ord(' '):  # Spacebar toggles pause
+        elif key == ord(' '):
             paused = not paused
 
         if not paused:
@@ -286,19 +309,19 @@ def main():
 
     cv2.destroyAllWindows()
 
-
-    # Save video with dashboard overlay
+    # --- Save final video ---
     output_video_frames = [
         draw_betting_dashboard(f, team_ball_control, idx, betting_options, bet_amount_options)
         for idx, f in enumerate(output_video_frames)
     ]
     save_video(output_video_frames, 'output_videos/output_video_with_dashboard.mp4')
 
-    # Print final bet if confirmed
+    # --- Print final bet ---
     if bet_confirmed:
         print(f"Final Bet: {selected_bet} Amount: {selected_amount}")
     else:
         print("No bet was confirmed.")
+
 
 if __name__ == "__main__":
     main()
