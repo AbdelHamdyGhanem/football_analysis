@@ -41,8 +41,8 @@ player_names_list = [
 # --- Generate random notification ---
 def generate_notification(team1_label, team2_label):
     events = [
-        f"Goal probability for {team1_label}: {random.randint(50,95)}%",
-        f"Goal probability for {team2_label}: {random.randint(50,95)}%",
+        f"Goal for {team1_label}: {random.randint(50,95)}%",
+        f"Goal for {team2_label}: {random.randint(50,95)}%",
         f"Substitution for {team1_label}: {random.randint(30,70)}%",
         f"Substitution for {team2_label}: {random.randint(30,70)}%"
     ]
