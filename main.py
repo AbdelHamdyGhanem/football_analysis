@@ -9,19 +9,27 @@ from player_ball_assigner import PlayerBallAssigner
 from camera_movement_estimator import CameraMovementEstimator
 from view_transformer import ViewTransformer
 from speed_and_distance_estimator import SpeedAndDistance_Estimator
-from trackers import Tracker
-
+import time
 
 # Global variables for tracking selections
 selected_bet = None
 selected_amount = None
 bet_confirmed = False
 
+# Notification global variables
+notification_text = ""
+notification_visible = False
+notification_start_time = 0
+notification_interval = 13  # seconds between notifications
+notification_duration = 2.5  # seconds before auto-hide
+notification_coords = (20, 100, 320, 180)  # x1, y1, x2, y2
+notification_closed = False
+
 # Coordinates for clickable areas
 option_coords = []
 amount_coords = []
 confirm_coords = ()
-new_bet_coords = ()
+new_bet_coords = ""
 dashboard_visible = True
 toggle_button_coords = ()  # x1, y1, x2, y2
 
@@ -30,11 +38,60 @@ player_names_list = [
     "Riley", "Jamie", "Cameron", "Drew", "Quinn"
 ]
 
+# --- Generate random notification ---
+def generate_notification(team1_label, team2_label):
+    events = [
+        f"Goal probability for {team1_label}: {random.randint(50,95)}%",
+        f"Goal probability for {team2_label}: {random.randint(50,95)}%",
+        f"Substitution for {team1_label}: {random.randint(30,70)}%",
+        f"Substitution for {team2_label}: {random.randint(30,70)}%"
+    ]
+    return random.choice(events)
+
+# --- Draw notification on frame ---
+def draw_notification(frame, text):
+    x1, y1, x2, y2 = notification_coords
+
+    x2 = x2 + 100
+
+    # Opaque rectangle (dark background)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (40, 40, 40), -1)
+
+    # Format probability nicely
+    if "probability" in text.lower():
+        try:
+            prob = float(''.join([c for c in text if c.isdigit() or c == '.']))
+            text = f"Goal Probability: {prob:.1f}%"
+        except:
+            pass
+
+    # Put text (white, vertically centered)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.9
+    thickness = 2
+
+    # Get text size
+    (tw, th), _ = cv2.getTextSize(text, font, font_scale, thickness)
+    text_x = x1 + 20
+    text_y = y1 + ((y2 - y1) + th) // 2
+
+    cv2.putText(frame, text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
+
+    return frame
+
 # --- Mouse callback ---
 def mouse_callback(event, x, y, flags, param):
     global selected_bet, selected_amount, bet_confirmed, dashboard_visible
+    global notification_visible, notification_closed
     betting_options, bet_amount_options = param
     if event == cv2.EVENT_LBUTTONDOWN:
+        # Close notification
+        if notification_visible:
+            x1, y1, x2, y2 = notification_coords
+            if x2-30 <= x <= x2-10 and y1+10 <= y <= y1+30:
+                notification_visible = False
+                notification_closed = True
+                return
         # Toggle dashboard button
         x1, y1, x2, y2 = toggle_button_coords
         if x1 <= x <= x2 and y1 <= y <= y2:
@@ -63,6 +120,7 @@ def mouse_callback(event, x, y, flags, param):
 # --- Draw dashboard ---
 def draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options, bet_amount_options):
     global toggle_button_coords, dashboard_visible, option_coords, amount_coords
+    global confirm_coords, new_bet_coords
     h, w, _ = frame.shape
     sidebar_w = 600
     overlay = frame.copy()
@@ -105,7 +163,7 @@ def draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options,
 
     # --- Selected Bet ---
     cv2.putText(frame, "Selected Bet:", (w - sidebar_w + 20, y_cursor + 20),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
     y_cursor += 30
     draw_rounded_box(frame, (w - sidebar_w + 15, y_cursor), (w - 20, y_cursor + box_height), (50, 50, 50), box_radius)
     cv2.putText(frame, selected_bet if selected_bet else "None", (w - sidebar_w + 25, y_cursor + 35),
@@ -149,7 +207,6 @@ def draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options,
 
     # --- Confirm & New Bet ---
     confirm_y = y_cursor + 20
-    global confirm_coords, new_bet_coords
     confirm_coords = (w - sidebar_w + 50, confirm_y, w - sidebar_w + 250, confirm_y + box_height)
     new_bet_coords = (w - sidebar_w + 270, confirm_y, w - sidebar_w + 470, confirm_y + box_height)
 
@@ -164,7 +221,7 @@ def draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options,
 
 # --- Helper function to get closest color name ---
 global CSS3_NAMES_TO_HEX
-CSS3_NAMES_TO_HEX= {
+CSS3_NAMES_TO_HEX = {
     'Black': '#000000', 'White': '#FFFFFF', 'Red': '#FF0000', 'Green': '#00FF00', 'Blue': '#0000FF',
     'Yellow': '#FFFF00', 'Cyan': '#00FFFF', 'Magenta': '#FF00FF', 'Gray': '#808080', 'Orange': '#FFA500',
     'Pink': '#FFC0CB', 'Brown': '#A52A2A', 'Purple': '#800080', 'Lime': '#00FF00', 'Navy': '#000080'
@@ -173,18 +230,18 @@ CSS3_NAMES_TO_HEX= {
 def get_closest_color_name(rgb_tuple):
     min_dist = float("inf")
     closest_name = None
-
-    for name in webcolors.names("css3"):  # list of CSS3 names
+    for name in webcolors.names("css3"):
         r_c, g_c, b_c = webcolors.name_to_rgb(name, spec='css3')
         dist = (r_c - rgb_tuple[0])**2 + (g_c - rgb_tuple[1])**2 + (b_c - rgb_tuple[2])**2
         if dist < min_dist:
             min_dist = dist
             closest_name = name
-
     return closest_name
 
 def main():
     global selected_bet, selected_amount, bet_confirmed
+    global notification_text, notification_visible, notification_start_time, notification_closed
+    global last_notification_time
 
     # --- Read video ---
     video_frames = read_video('input_videos/game.mp4')
@@ -220,14 +277,10 @@ def main():
         video_frames, read_from_stub=True, stub_path='stubs/camera_movement_stub.pkl'
     )
 
-    # --- Apply adjusted positions to tracks (this creates 'position_adjusted') ---
+    # --- Apply adjusted positions to tracks ---
     camera_movement_estimator.add_adjust_positions_to_tracks(tracks, camera_movement_per_frame)
 
     # --- View transformer ---
-    view_transformer = ViewTransformer()
-    view_transformer.add_transformed_position_to_tracks(tracks)
-
-    # --- View transformer and ball interpolation ---
     view_transformer = ViewTransformer()
     view_transformer.add_transformed_position_to_tracks(tracks)
     tracks["ball"] = tracker.interpolate_ball_positions(tracks["ball"])
@@ -257,10 +310,6 @@ def main():
     team_ball_control = np.array(team_ball_control)
 
     # --- Assign random player names ---
-    player_names_list = [
-        "Alex", "Jordan", "Taylor", "Morgan", "Casey",
-        "Riley", "Jamie", "Cameron", "Drew", "Quinn"
-    ]
     player_id_to_name = {}
     for frame_num, player_track in enumerate(tracks['players']):
         for player_id in player_track.keys():
@@ -293,11 +342,30 @@ def main():
     cv2.setMouseCallback("Football Analysis", mouse_callback, param=(betting_options, bet_amount_options))
     frame_idx = 0
     paused = False
+    last_notification_time = time.time()
     while frame_idx < len(output_video_frames):
         frame = output_video_frames[frame_idx]
         frame_with_dashboard = draw_betting_dashboard(frame, team_ball_control, frame_idx, betting_options, bet_amount_options)
-        cv2.imshow("Football Analysis", frame_with_dashboard)
 
+        current_time = time.time()
+        # Show new notification every 13 sec
+        if current_time - last_notification_time >= notification_interval:
+            notification_text = generate_notification(team1_label, team2_label)
+            notification_visible = True
+            notification_closed = False
+            notification_start_time = current_time
+            last_notification_time = current_time
+            print("Notification triggered:", notification_text)
+
+        # Auto-hide after 2.5 sec
+        if notification_visible and not notification_closed and current_time - notification_start_time >= notification_duration:
+            notification_visible = False
+
+        # Draw notification if visible
+        if notification_visible:
+            draw_notification(frame_with_dashboard, notification_text)
+
+        cv2.imshow("Football Analysis", frame_with_dashboard)
         key = cv2.waitKey(30) & 0xFF
         if key == ord('q'):
             break
@@ -321,7 +389,6 @@ def main():
         print(f"Final Bet: {selected_bet} Amount: {selected_amount}")
     else:
         print("No bet was confirmed.")
-
 
 if __name__ == "__main__":
     main()
